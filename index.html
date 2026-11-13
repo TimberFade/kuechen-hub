@@ -144,11 +144,12 @@ const DEFAULT_TILES = [
   { id: "youtube", type: "link", label: "YouTube", icon: "play", url: "youtube://" },
   { id: "chatgpt", type: "link", label: "ChatGPT", icon: "chat", url: "https://chatgpt.com" },
   { id: "agenda", type: "agenda", label: "Termine", icon: "calendar", url: "https://calendar.google.com" },
-  { id: "chrome", type: "link", label: "Chrome", icon: "globe", url: "googlechrome://" },
   { id: "weather", type: "weather", label: "Wetter", icon: "partly" },
 ];
 // Layout version 2 dropped Smart Home, Spotify, Drive and Gemini: start again from the new defaults.
 if (LS.get("v", 1) < 2) { LS.set("tiles", DEFAULT_TILES); LS.set("v", 2); }
+// Version 3 dropped Chrome: take it out of layouts that were already saved, and leave the rest as arranged.
+if (LS.get("v", 1) < 3) { LS.set("tiles", LS.get("tiles", DEFAULT_TILES).filter(t => t.id !== "chrome")); LS.set("v", 3); }
 let tiles = LS.get("tiles", DEFAULT_TILES);
 let pin = LS.get("pin", null);
 let place = LS.get("place", null);
