@@ -54,7 +54,7 @@ header{display:flex;align-items:center}
 .chip{padding:11px 17px;border-radius:18px;font-size:21px;font-weight:600}
 #gear{width:58px;height:58px;border-radius:29px;display:flex;align-items:center;justify-content:center}
 #gear svg{width:26px;height:26px}
-#grid{flex:1;min-height:0;margin-top:24px;display:grid;gap:18px;align-content:start}
+#grid{flex:1;min-height:0;margin-top:24px;display:grid;gap:18px;align-content:start;grid-auto-flow:dense}
 .tile{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:10px;cursor:pointer;text-align:center;min-width:0}
 .badge{width:var(--b);height:var(--b);border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;
   background:linear-gradient(135deg,color-mix(in srgb,var(--accent) 38%,transparent),color-mix(in srgb,var(--accent2) 22%,transparent));
@@ -66,6 +66,13 @@ svg.ic{fill:none;stroke:currentColor;stroke-width:1.25;stroke-linecap:round;stro
 .temp{font-size:42px;font-weight:300;line-height:1.1;margin-top:6px}
 .small{font-size:15px;color:var(--sub);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mid{font-size:17px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tile[data-span="2"]{grid-column:span 2}
+.tile.ag{align-items:stretch;justify-content:flex-start;text-align:left;padding:16px 20px}
+.aghead{display:flex;align-items:center;gap:12px;font-size:20px;font-weight:500;letter-spacing:.3px;margin-bottom:10px}
+.aghead .badge{width:40px;height:40px}
+.ev{display:flex;gap:10px;font-size:18px;padding:4px 0;min-width:0}
+.ev b{color:var(--accent);font-weight:600;flex:none;width:158px;white-space:nowrap}
+.ev span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .editbar{position:absolute;top:8px;left:8px;right:8px;display:flex;gap:6px}
 .round{width:44px;height:44px;border-radius:22px;display:flex;align-items:center;justify-content:center;font-size:19px;font-weight:700;
   background:var(--strong-a);border:1px solid var(--stroke);cursor:pointer}
@@ -128,17 +135,16 @@ const LS = {
   set(k, v) { try { localStorage.setItem("hub." + k, JSON.stringify(v)); } catch (e) {} },
 };
 const DEFAULT_TILES = [
-  { id: "home", type: "link", label: "Smart Home", icon: "home", url: "googlehome://" },
   { id: "kitchen", type: "kitchen", label: "Küchen-Helfer", icon: "pot" },
-  { id: "recipes", type: "link", label: "Rezepte", icon: "book", url: "https://drive.google.com" },
   { id: "chefkoch", type: "link", label: "Chefkoch", icon: "chef", url: "https://www.chefkoch.de" },
-  { id: "spotify", type: "link", label: "Spotify", icon: "music", url: "spotify://" },
   { id: "youtube", type: "link", label: "YouTube", icon: "play", url: "youtube://" },
-  { id: "calendar", type: "link", label: "Kalender", icon: "calendar", url: "https://calendar.google.com" },
+  { id: "chatgpt", type: "link", label: "ChatGPT", icon: "chat", url: "https://chatgpt.com" },
+  { id: "agenda", type: "agenda", label: "Termine", icon: "calendar", url: "https://calendar.google.com" },
   { id: "chrome", type: "link", label: "Chrome", icon: "globe", url: "googlechrome://" },
-  { id: "gemini", type: "link", label: "Gemini", icon: "sparkle", url: "https://gemini.google.com" },
   { id: "weather", type: "weather", label: "Wetter", icon: "partly" },
 ];
+// Layout version 2 dropped Smart Home, Spotify, Drive and Gemini: start again from the new defaults.
+if (LS.get("v", 1) < 2) { LS.set("tiles", DEFAULT_TILES); LS.set("v", 2); }
 let tiles = LS.get("tiles", DEFAULT_TILES);
 let pin = LS.get("pin", null);
 let place = LS.get("place", null);
@@ -146,7 +152,8 @@ let theme = LS.get("theme", "auto");
 let shopping = LS.get("shopping", []);
 let timers = LS.get("timers", []);
 let timerCount = LS.get("timerCount", 0);
-let wx = null, edit = false, tab = 0;
+let agendaUrl = LS.get("agendaUrl", null);
+let wx = null, events = null, agendaError = false, edit = false, tab = 0;
 
 /* ---------- helpers ---------- */
 const $ = (s, r) => (r || document).querySelector(s);
@@ -171,6 +178,7 @@ const ICONS = {
   play: P("M6.5 5.5h11a4 4 0 0 1 4 4v5a4 4 0 0 1-4 4h-11a4 4 0 0 1-4-4v-5a4 4 0 0 1 4-4zM10 9l5.5 3-5.5 3z"),
   calendar: P("M6 5h12a2.5 2.5 0 0 1 2.5 2.5V18a2.5 2.5 0 0 1-2.5 2.5H6A2.5 2.5 0 0 1 3.5 18V7.5A2.5 2.5 0 0 1 6 5zM3.5 10h17M8 3v4M16 3v4M7.5 14H9M11.3 14h1.5M15 14h1.5M7.5 17H9M11.3 17h1.5"),
   globe: P("M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0zM16 12c0 5-1.8 9-4 9s-4-4-4-9 1.8-9 4-9 4 4 4 9zM3 12h18M4.6 7.5h14.8M4.6 16.5h14.8"),
+  chat: P("M5 5h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-7l-4.5 3.5V17H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zM8 10h8M8 13h5"),
   sparkle: P("M12 3c.6 5.5 3.5 8.4 9 9-5.5.6-8.4 3.5-9 9-.6-5.5-3.5-8.4-9-9 5.5-.6 8.4-3.5 9-9z"),
   app: P("M4 4h6.5v6.5H4zM13.5 4H20v6.5h-6.5zM4 13.5h6.5V20H4zM13.5 13.5H20V20h-6.5z"),
   cart: P("M3 4h2.5l2.2 10.5h10.6L20.5 7H6.4M9 19.5h.01M17 19.5h.01"),
@@ -185,7 +193,7 @@ const ICONS = {
   fog: cloudAt(-4, "M5 17.5h14M7 20.5h10"),
   gear: P("M4 7h10M18 7h2M4 17h2M10 17h10M18 7a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM10 17a2 2 0 1 1-4 0 2 2 0 0 1 4 0z"),
 };
-const PICKABLE = ["app", "home", "pot", "book", "chef", "music", "play", "calendar", "globe", "sparkle", "cart", "mail", "tv", "sun"];
+const PICKABLE = ["app", "chat", "home", "pot", "book", "chef", "music", "play", "calendar", "globe", "sparkle", "cart", "mail", "tv", "sun"];
 const icon = n => `<svg class="ic" viewBox="0 0 24 24">${ICONS[n] || ICONS.app}</svg>`;
 
 /* ---------- theme, clock, tick ---------- */
@@ -257,6 +265,14 @@ function tileHtml(t, i) {
     else body = `<div class="temp">${Math.round(wx.temp)}°</div><div class="mid">${weatherText(wx.code)}</div><div class="small">${esc(place.name)} · ${Math.round(wx.hi)}° / ${Math.round(wx.lo)}°</div>`;
     return `<div class="tile wx glass" data-act="tile" data-i="${i}"><div class="badge">${icon(wx ? weatherIcon(wx.code) : "partly")}</div>${body}${bar}</div>`;
   }
+  if (t.type === "agenda") {
+    let body;
+    if (!agendaUrl) body = `<div class="small" style="white-space:normal">Tippen, um den Kalender zu verbinden</div>`;
+    else if (!events) body = `<div class="small">${agendaError ? "Kalender nicht erreichbar" : "Lädt …"}</div>`;
+    else if (!events.length) body = `<div class="small">Keine Termine in den nächsten 30 Tagen</div>`;
+    else body = events.slice(0, 4).map(e => `<div class="ev"><b>${whenText(e)}</b><span>${esc(e.title || "(ohne Titel)")}</span></div>`).join("");
+    return `<div class="tile ag glass" data-span="2" data-act="tile" data-i="${i}"><div class="aghead"><div class="badge">${icon("calendar")}</div>Anstehende Termine</div>${body}${bar}</div>`;
+  }
   return `<div class="tile glass" data-act="tile" data-i="${i}"><div class="badge">${icon(t.icon)}</div><div class="label">${esc(t.label)}</div>${bar}</div>`;
 }
 function renderHome() {
@@ -265,12 +281,26 @@ function renderHome() {
   layout(); renderChips();
 }
 /* Pick the column count that gives the largest tiles while everything fits on one screen. */
+function rowsFor(spans, c) {
+  const pending = spans.slice(); let rows = 0;
+  while (pending.length) {
+    let free = c, placed = false;
+    for (let k = 0; k < pending.length && free > 0;) {
+      if (pending[k] <= free) { free -= pending[k]; pending.splice(k, 1); placed = true; } else k++;
+    }
+    if (!placed) return 0;
+    rows++;
+  }
+  return rows;
+}
 function layout() {
-  const g = $("#grid"), n = g.children.length, gap = 18, W = g.clientWidth, H = g.clientHeight;
-  if (!n || !W || !H) return;
+  const g = $("#grid"), gap = 18, W = g.clientWidth, H = g.clientHeight;
+  const spans = Array.from(g.children).map(el => +(el.dataset.span || 1));
+  if (!spans.length || !W || !H) return;
   let best = null;
   for (let c = 2; c <= 9; c++) {
-    const rows = Math.ceil(n / c), w = (W - gap * (c - 1)) / c, h = Math.min((H - gap * (rows - 1)) / rows, w * 1.3);
+    const rows = rowsFor(spans, c); if (!rows) continue;
+    const w = (W - gap * (c - 1)) / c, h = Math.min((H - gap * (rows - 1)) / rows, w * 1.3);
     if (!best || Math.min(w, h) > Math.min(best.w, best.h)) best = { c, w, h };
   }
   g.style.gridTemplateColumns = `repeat(${best.c}, ${best.w}px)`;
@@ -282,6 +312,7 @@ window.addEventListener("resize", layout);
 function openTile(t) {
   if (t.type === "kitchen") return show("kitchen");
   if (t.type === "weather") return placeDialog();
+  if (t.type === "agenda" && !agendaUrl) return agendaDialog();
   if (!t.url) return;
   if (/^https?:/i.test(t.url)) window.open(t.url, "_blank"); else location.href = t.url;
 }
@@ -314,6 +345,37 @@ async function placeSearch() {
     place = { name: f.name, lat: f.latitude, lon: f.longitude }; LS.set("place", place);
     closeDialog(); loadWeather();
   } catch (e) { $("#plmsg").textContent = "Ort nicht gefunden"; }
+}
+
+/* ---------- calendar (a small Google Apps Script in the owner's account hands out the next events) ---------- */
+function whenText(e) {
+  const d = new Date(e.start), now = new Date(), key = x => x.getFullYear() * 10000 + x.getMonth() * 100 + x.getDate();
+  const tomorrow = new Date(now.getTime() + 86400000);
+  const day = key(d) === key(now) ? "Heute" : key(d) === key(tomorrow) ? "Morgen"
+    : d.toLocaleDateString("de-DE", { weekday: "short" }).replace(".", "") + " " + d.getDate() + "." + (d.getMonth() + 1) + ".";
+  return e.allDay ? day : day + " " + d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+}
+async function loadAgenda() {
+  if (!agendaUrl) { events = null; return; }
+  try {
+    const r = await fetch(agendaUrl, { redirect: "follow" });
+    const list = await r.json();
+    if (!Array.isArray(list)) throw new Error("unexpected answer");
+    events = list; agendaError = false;
+  } catch (e) { agendaError = true; }
+  if (!$("#home").classList.contains("hidden") && $("#dlg").classList.contains("hidden")) renderHome();
+}
+function agendaDialog() {
+  dialog(`<h2>Kalender verbinden</h2><div class="stack" style="width:520px">
+    <div class="small" style="white-space:normal">Adresse der Web-App aus Google Apps Script einfügen (beginnt mit https://script.google.com/).</div>
+    <input id="au" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(agendaUrl || "")}" autocapitalize="off" autocorrect="off">
+    <div class="row"><div class="btn glass strong" data-act="agendaok">Übernehmen</div><div class="btn glass" data-act="close">Abbrechen</div><span id="aumsg" class="small"></span></div></div>`);
+}
+function agendaSave() {
+  const v = $("#au").value.trim();
+  if (v && !/^https:\/\/script\.google\.com\//.test(v)) { $("#aumsg").textContent = "Das ist keine Apps-Script-Adresse"; return; }
+  agendaUrl = v || null; LS.set("agendaUrl", agendaUrl); events = null; agendaError = false;
+  closeDialog(); renderHome(); loadAgenda();
 }
 
 /* ---------- dialogs ---------- */
@@ -448,7 +510,12 @@ document.addEventListener("click", ev => {
     case "home": show("home"); break;
     case "gear": if (edit) { edit = false; renderHome(); } else if (!pin) setupPin(menu); else askPin(menu); break;
     case "chip": { const t = timers.find(t => t.id == el.dataset.id); if (t && t.done) { timers = timers.filter(x => x !== t); LS.set("timers", timers); } else { tab = 0; show("kitchen"); } break; }
-    case "tile": if (edit) { if (tiles[i].type !== "weather") tileDialog(i); } else openTile(tiles[i]); break;
+    case "tile":
+      if (!edit) openTile(tiles[i]);
+      else if (tiles[i].type === "agenda") agendaDialog();
+      else if (tiles[i].type !== "weather") tileDialog(i);
+      break;
+    case "agendaok": agendaSave(); break;
     case "add": tileDialog(null); break;
     case "left": case "right": {
       ev.stopPropagation(); const to = i + (a === "left" ? -1 : 1);
@@ -497,7 +564,8 @@ document.addEventListener("keydown", ev => {
 async function wake() { try { if (navigator.wakeLock) await navigator.wakeLock.request("screen"); } catch (e) {} }
 document.addEventListener("visibilitychange", () => { if (!document.hidden) { wake(); tick(); } });
 
-applyTheme(); renderHome(); tick(); wake(); loadWeather();
+applyTheme(); renderHome(); tick(); wake(); loadWeather(); loadAgenda();
+setInterval(loadAgenda, 5 * 60 * 1000);
 setInterval(tick, 500);
 setInterval(loadWeather, 20 * 60 * 1000);
 </script>
