@@ -133,6 +133,9 @@ svg.ic{fill:none;stroke:currentColor;stroke-width:1.25;stroke-linecap:round;stro
 
 <script>
 "use strict";
+/* Shown in the admin menu. Raise it with every upload so it is clear which version the iPad is running. */
+const VERSION = "5 · 13.11.2026";
+
 /* ---------- storage ---------- */
 const LS = {
   get(k, d) { try { const v = localStorage.getItem("hub." + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
@@ -418,6 +421,8 @@ function menu() {
     <div class="btn glass" data-act="editon">Kacheln bearbeiten</div>
     <div class="btn glass" data-act="theme">Design: ${names[theme]}</div>
     <div class="btn glass" data-act="newpin">PIN ändern</div>
+    <div class="btn glass" data-act="reload">Website aktualisieren</div>
+    <div class="small" style="text-align:center" id="vers">Version ${VERSION}</div>
     <div class="btn glass" data-act="close">Schließen</div></div>`);
 }
 let editing = null;
@@ -532,6 +537,11 @@ document.addEventListener("click", ev => {
     case "editon": closeDialog(); edit = true; renderHome(); break;
     case "theme": theme = { auto: "light", light: "dark", dark: "auto" }[theme]; LS.set("theme", theme); applyTheme(); menu(); break;
     case "newpin": setupPin(null); break;
+    case "reload":
+      // Fetch a fresh copy past the browser cache first, then reload onto it.
+      $("#vers").textContent = "Wird aktualisiert …";
+      fetch(location.href, { cache: "reload" }).catch(() => {}).then(() => location.reload());
+      break;
     case "pick": editing.t.icon = el.dataset.n; drawIcons(); break;
     case "tilesave": {
       const t = editing.t; t.label = $("#tl").value.trim() || "Kachel"; if ($("#tu")) t.url = $("#tu").value.trim();
