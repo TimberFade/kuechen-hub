@@ -18,7 +18,7 @@
   --stroke:rgba(255,255,255,.34);--text:#fff;--sub:rgba(255,255,255,.65);
   --accent:#8fd8ff;--accent2:#c79bff;--card:rgba(27,31,63,.94);--b:110px;
 }
-body.light{
+html.light{
   --bg1:#d6e6ff;--bg2:#efe2ff;--bg3:#ffead8;
   --fill-a:rgba(255,255,255,.72);--fill-b:rgba(255,255,255,.3);
   --strong-a:rgba(255,255,255,1);--strong-b:rgba(255,255,255,.5);
@@ -26,12 +26,14 @@ body.light{
   --accent:#2f6bff;--accent2:#9b5cff;--card:rgba(244,246,255,.96);
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;-webkit-touch-callout:none}
-html,body{height:100%;margin:0;overflow:hidden;overscroll-behavior:none}
+html,body{margin:0;overflow:hidden;overscroll-behavior:none}
+/* The gradient sits on the page itself and the content is pinned to all four edges, so no strip of the default white page can show. */
+html{height:100%;background:linear-gradient(135deg,var(--bg1),var(--bg2) 55%,var(--bg3)) fixed var(--bg2)}
 body{
   font-family:-apple-system,"SF Pro Display","Helvetica Neue",Roboto,sans-serif;color:var(--text);
-  background:linear-gradient(135deg,var(--bg1),var(--bg2) 55%,var(--bg3));
+  position:fixed;top:0;left:0;right:0;bottom:0;background:transparent;
   -webkit-user-select:none;user-select:none;
-  padding:calc(env(safe-area-inset-top) + 26px) 28px 26px;
+  padding:calc(env(safe-area-inset-top) + 26px) 28px calc(env(safe-area-inset-bottom) + 26px);
 }
 input,textarea{-webkit-user-select:text;user-select:text;font:inherit;color:var(--text);background:transparent;
   border:1px solid var(--stroke);border-radius:14px;padding:12px 14px;font-size:21px;outline:none;width:100%}
@@ -200,7 +202,7 @@ const icon = n => `<svg class="ic" viewBox="0 0 24 24">${ICONS[n] || ICONS.app}<
 function applyTheme() {
   const h = new Date().getHours();
   const light = theme === "light" || (theme === "auto" && h >= 7 && h < 19);
-  document.body.classList.toggle("light", light);
+  document.documentElement.classList.toggle("light", light);
 }
 function tick() {
   const now = new Date();
