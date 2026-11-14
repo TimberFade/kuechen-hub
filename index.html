@@ -137,7 +137,7 @@ svg.ic{fill:none;stroke:currentColor;stroke-width:1.25;stroke-linecap:round;stro
 <script>
 "use strict";
 /* Shown in the admin menu. Raise it with every upload so it is clear which version the iPad is running. */
-const VERSION = "8 · 14.11.2026";
+const VERSION = "9 · 14.11.2026";
 
 /* ---------- storage ---------- */
 const LS = {
@@ -171,7 +171,9 @@ let shopping = LS.get("shopping", []);
 let timers = LS.get("timers", []);
 let timerCount = LS.get("timerCount", 0);
 let agendaUrl = LS.get("agendaUrl", null);
-let wx = null, tasks = null, events = null, agendaError = false, edit = false, tab = 0;
+// Tasks may live in a different Google account than the calendar, so they can have their own script address.
+let tasksUrl = LS.get("tasksUrl", null);
+let wx = null, tasks = null, events = null, agendaError = false, tasksError = false, tasksLoaded = false, edit = false, tab = 0;
 
 /* ---------- helpers ---------- */
 const $ = (s, r) => (r || document).querySelector(s);
@@ -286,8 +288,8 @@ function tileHtml(t, i) {
   }
   if (t.type === "tasks") {
     let body;
-    if (!agendaUrl) body = `<div class="small" style="white-space:normal">Erst den Kalender verbinden</div>`;
-    else if (!events) body = `<div class="small">${agendaError ? "Nicht erreichbar" : "Lädt …"}</div>`;
+    if (!tasksUrl && !agendaUrl) body = `<div class="small" style="white-space:normal">Tippen, um die Aufgaben zu verbinden</div>`;
+    else if (tasksUrl ? !tasksLoaded : !events) body = `<div class="small">${(tasksUrl ? tasksError : agendaError) ? "Nicht erreichbar" : "Lädt …"}</div>`;
     else if (!tasks) body = `<div class="small" style="white-space:normal">Das Google-Skript liefert noch keine Aufgaben</div>`;
     else if (!tasks.length) body = `<div class="small">Keine offenen Aufgaben</div>`;
     else body = tasks.slice(0, 5).map(x => `<div class="tk"><i></i><span>${esc(x.title)}</span></div>`).join("");
@@ -340,7 +342,8 @@ window.addEventListener("resize", layout);
 function openTile(t) {
   if (t.type === "kitchen") return show("kitchen");
   if (t.type === "weather") return placeDialog();
-  if ((t.type === "agenda" || t.type === "tasks") && !agendaUrl) return agendaDialog();
+  if (t.type === "agenda" && !agendaUrl) return agendaDialog("agenda");
+  if (t.type === "tasks" && !tasksUrl && !tasks) return agendaDialog("tasks");
   if (!t.url) return;
   if (/^https?:/i.test(t.url)) window.open(t.url, "_blank"); else location.href = t.url;
 }
@@ -389,24 +392,42 @@ async function loadAgenda() {
     const r = await fetch(agendaUrl, { redirect: "follow" });
     const o = await r.json();
     // The first version of the script answered with a bare list of events; the current one adds the tasks.
-    if (Array.isArray(o)) { events = o; tasks = null; }
-    else if (o && Array.isArray(o.events)) { events = o.events; tasks = Array.isArray(o.tasks) ? o.tasks : null; }
+    if (Array.isArray(o)) { events = o; if (!tasksUrl) tasks = null; }
+    else if (o && Array.isArray(o.events)) { events = o.events; if (!tasksUrl) tasks = Array.isArray(o.tasks) ? o.tasks : null; }
     else throw new Error("unexpected answer");
     agendaError = false;
   } catch (e) { agendaError = true; }
   if (!$("#home").classList.contains("hidden") && $("#dlg").classList.contains("hidden")) renderHome();
 }
-function agendaDialog() {
-  dialog(`<h2>Kalender verbinden</h2><div class="stack" style="width:520px">
-    <div class="small" style="white-space:normal">Adresse der Web-App aus Google Apps Script einfügen (beginnt mit https://script.google.com/).</div>
-    <input id="au" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(agendaUrl || "")}" autocapitalize="off" autocorrect="off">
+async function loadTasks() {
+  if (!tasksUrl) return;
+  try {
+    const o = await (await fetch(tasksUrl, { redirect: "follow" })).json();
+    tasks = o && Array.isArray(o.tasks) ? o.tasks : null;
+    tasksLoaded = true; tasksError = false;
+  } catch (e) { tasksError = true; }
+  if (!$("#home").classList.contains("hidden") && $("#dlg").classList.contains("hidden")) renderHome();
+}
+let dialogKind = "agenda";
+function agendaDialog(kind) {
+  dialogKind = kind;
+  const isTasks = kind === "tasks";
+  dialog(`<h2>${isTasks ? "Aufgaben verbinden" : "Kalender verbinden"}</h2><div class="stack" style="width:520px">
+    <div class="small" style="white-space:normal">Adresse der Web-App aus Google Apps Script einfügen (beginnt mit https://script.google.com/).${
+      isTasks ? " Leer lassen, wenn die Aufgaben aus demselben Konto wie der Kalender kommen." : ""}</div>
+    <input id="au" placeholder="https://script.google.com/macros/s/…/exec" value="${esc((isTasks ? tasksUrl : agendaUrl) || "")}" autocapitalize="off" autocorrect="off">
     <div class="row"><div class="btn glass strong" data-act="agendaok">Übernehmen</div><div class="btn glass" data-act="close">Abbrechen</div><span id="aumsg" class="small"></span></div></div>`);
 }
 function agendaSave() {
   const v = $("#au").value.trim();
   if (v && !/^https:\/\/script\.google\.com\//.test(v)) { $("#aumsg").textContent = "Das ist keine Apps-Script-Adresse"; return; }
-  agendaUrl = v || null; LS.set("agendaUrl", agendaUrl); events = null; tasks = null; agendaError = false;
-  closeDialog(); renderHome(); loadAgenda();
+  if (dialogKind === "tasks") {
+    tasksUrl = v || null; LS.set("tasksUrl", tasksUrl); tasks = null; tasksLoaded = false; tasksError = false;
+    closeDialog(); renderHome(); if (tasksUrl) loadTasks(); else loadAgenda();
+  } else {
+    agendaUrl = v || null; LS.set("agendaUrl", agendaUrl); events = null; agendaError = false; if (!tasksUrl) tasks = null;
+    closeDialog(); renderHome(); loadAgenda();
+  }
 }
 
 /* ---------- dialogs ---------- */
@@ -545,7 +566,8 @@ document.addEventListener("click", ev => {
     case "chip": { const t = timers.find(t => t.id == el.dataset.id); if (t && t.done) { timers = timers.filter(x => x !== t); LS.set("timers", timers); } else { tab = 0; show("kitchen"); } break; }
     case "tile":
       if (!edit) openTile(tiles[i]);
-      else if (tiles[i].type === "agenda") agendaDialog();
+      else if (tiles[i].type === "agenda") agendaDialog("agenda");
+      else if (tiles[i].type === "tasks") agendaDialog("tasks");
       else if (tiles[i].type !== "weather") tileDialog(i);
       break;
     case "agendaok": agendaSave(); break;
@@ -602,8 +624,8 @@ document.addEventListener("keydown", ev => {
 async function wake() { try { if (navigator.wakeLock) await navigator.wakeLock.request("screen"); } catch (e) {} }
 document.addEventListener("visibilitychange", () => { if (!document.hidden) { wake(); tick(); } });
 
-applyTheme(); renderHome(); tick(); wake(); loadWeather(); loadAgenda();
-setInterval(loadAgenda, 5 * 60 * 1000);
+applyTheme(); renderHome(); tick(); wake(); loadWeather(); loadAgenda(); loadTasks();
+setInterval(() => { loadAgenda(); loadTasks(); }, 5 * 60 * 1000);
 setInterval(tick, 500);
 setInterval(loadWeather, 20 * 60 * 1000);
 </script>
