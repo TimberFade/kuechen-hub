@@ -37,7 +37,7 @@ body{
   -webkit-user-select:none;user-select:none;
   padding:calc(env(safe-area-inset-top) + 26px) 28px calc(env(safe-area-inset-bottom) + 26px);
 }
-input,textarea{-webkit-user-select:text;user-select:text;font:inherit;color:var(--text);background:transparent;
+input,textarea{-webkit-user-select:text;user-select:text;-webkit-touch-callout:default;font:inherit;color:var(--text);background:transparent;
   border:1px solid var(--stroke);border-radius:14px;padding:12px 14px;font-size:21px;outline:none;width:100%}
 input:focus,textarea:focus{border-color:var(--accent)}
 .screen{height:100%;display:flex;flex-direction:column}
@@ -137,7 +137,7 @@ svg.ic{fill:none;stroke:currentColor;stroke-width:1.25;stroke-linecap:round;stro
 <script>
 "use strict";
 /* Shown in the admin menu. Raise it with every upload so it is clear which version the iPad is running. */
-const VERSION = "10 · 14.11.2026";
+const VERSION = "11 · 14.11.2026";
 
 /* ---------- storage ---------- */
 const LS = {
@@ -400,7 +400,7 @@ function agendaDialog() {
   dialog(`<h2>Kalender verbinden</h2><div class="stack" style="width:520px">
     <div class="small" style="white-space:normal">Adresse der Web-App aus Google Apps Script einfügen (beginnt mit https://script.google.com/).</div>
     <input id="au" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(agendaUrl || "")}" autocapitalize="off" autocorrect="off">
-    <div class="row"><div class="btn glass strong" data-act="agendaok">Übernehmen</div><div class="btn glass" data-act="close">Abbrechen</div><span id="aumsg" class="small"></span></div></div>`);
+    <div class="row"><div class="btn glass" data-act="paste">Einfügen</div><div class="btn glass strong" data-act="agendaok">Übernehmen</div><div class="btn glass" data-act="close">Abbrechen</div><span id="aumsg" class="small"></span></div></div>`);
 }
 function agendaSave() {
   const v = $("#au").value.trim();
@@ -443,6 +443,7 @@ function menu() {
   dialog(`<h2>Verwaltung</h2><div class="stack">
     <div class="btn glass" data-act="editon">Kacheln bearbeiten</div>
     <div class="btn glass" data-act="theme">Design: ${names[theme]}</div>
+    <div class="btn glass" data-act="agendaset">Kalender-Adresse ändern</div>
     <div class="btn glass" data-act="newpin">PIN ändern</div>
     <div class="btn glass" data-act="reload">Website aktualisieren</div>
     <div class="small" style="text-align:center" id="vers">Version ${VERSION}</div>
@@ -549,6 +550,14 @@ document.addEventListener("click", ev => {
       else if (tiles[i].type !== "weather") tileDialog(i);
       break;
     case "agendaok": agendaSave(); break;
+    case "agendaset": agendaDialog(); break;
+    case "paste":
+      // Reads the clipboard; iPadOS shows its own small "Einfügen" confirmation first.
+      if (navigator.clipboard && navigator.clipboard.readText) {
+        navigator.clipboard.readText().then(t => { if (t) $("#au").value = t.trim(); })
+          .catch(() => { $("#aumsg").textContent = "Einfügen nicht erlaubt, bitte lange ins Feld tippen"; });
+      } else $("#aumsg").textContent = "Bitte lange ins Feld tippen und Einfügen wählen";
+      break;
     case "add": tileDialog(null); break;
     case "left": case "right": {
       ev.stopPropagation(); const to = i + (a === "left" ? -1 : 1);
