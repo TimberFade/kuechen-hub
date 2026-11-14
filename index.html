@@ -137,7 +137,7 @@ svg.ic{fill:none;stroke:currentColor;stroke-width:1.25;stroke-linecap:round;stro
 <script>
 "use strict";
 /* Shown in the admin menu. Raise it with every upload so it is clear which version the iPad is running. */
-const VERSION = "11 · 14.11.2026";
+const VERSION = "12 · 14.11.2026";
 
 /* ---------- storage ---------- */
 const LS = {
@@ -177,7 +177,16 @@ let wx = null, tasks = null, events = null, agendaError = false, edit = false, t
 const $ = (s, r) => (r || document).querySelector(s);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const fmt = d => { const r = Math.round(d * 100) / 100; return String(r).replace(".", ","); };
-const num = s => { const v = parseFloat(String(s).trim().replace(",", ".")); return isNaN(v) ? null : v; };
+/* Reads a quantity the way recipes write it: 250, 0,5, 1/2, 1 1/2, ½, 1½. */
+const FRAC = { "¼": 1 / 4, "½": 1 / 2, "¾": 3 / 4, "⅓": 1 / 3, "⅔": 2 / 3, "⅛": 1 / 8 };
+const num = s => {
+  s = String(s).trim().replace(",", ".");
+  let m;
+  if ((m = s.match(/^(\d+)?\s*([¼½¾⅓⅔⅛])$/))) return (m[1] ? +m[1] : 0) + FRAC[m[2]];
+  if ((m = s.match(/^(?:(\d+)\s+)?(\d+)\s*\/\s*(\d+)$/))) return +m[3] ? (m[1] ? +m[1] : 0) + m[2] / m[3] : null;
+  return /^-?(\d+\.?\d*|\.\d+)$/.test(s) ? parseFloat(s) : null;
+};
+const hasFraction = s => /[\/¼½¾⅓⅔⅛]/.test(String(s));
 const mmss = ms => {
   const s = Math.ceil(Math.max(0, ms) / 1000), p = n => String(n).padStart(2, "0");
   return s >= 3600 ? Math.floor(s / 3600) + ":" + p(Math.floor(s % 3600 / 60)) + ":" + p(s % 60) : p(Math.floor(s / 60)) + ":" + p(s % 60);
@@ -470,7 +479,7 @@ function saveTiles() { LS.set("tiles", tiles); renderHome(); }
 const TABS = ["Timer", "Umrechner", "Portionen", "Einkaufsliste"];
 const WEIGHT = [["g", 1], ["kg", 1000], ["oz", 28.3495], ["lb", 453.592]];
 const VOLUME = [["ml", 1], ["l", 1000], ["TL", 5], ["EL", 15], ["Tasse (US)", 240], ["fl oz", 29.5735]];
-const K = { custom: 25, cat: 0, unit: 0, value: "100", from: 4, to: 2, text: "500 g Hackfleisch\n2 Zwiebeln\n0,5 l Brühe" };
+const K = { custom: 25, cat: 0, unit: 0, value: "100", from: 4, to: 2, text: "500 g Hackfleisch\n2 Zwiebeln\n1/2 l Brühe\n1 1/2 EL Öl" };
 function renderKitchen() {
   $("#tabs").innerHTML = TABS.map((t, i) => `<div class="btn glass ${tab === i ? "strong" : ""}" data-act="tab" data-i="${i}">${t}</div>`).join("");
   const b = $("#kbody");
@@ -486,8 +495,11 @@ function renderKitchen() {
   } else if (tab === 1) {
     const units = K.cat === 0 ? WEIGHT : K.cat === 1 ? VOLUME : [["°C"], ["°F"]];
     b.innerHTML = `<div class="wrap">${["Gewicht", "Volumen", "Temperatur"].map((n, i) => `<div class="btn glass ${K.cat === i ? "strong" : ""}" data-act="cat" data-i="${i}">${n}</div>`).join("")}</div>
-      <div class="row" style="margin:18px 0;flex-wrap:wrap"><input id="cv" inputmode="decimal" style="width:190px" value="${esc(K.value)}">
-      ${units.map((u, i) => `<div class="btn glass ${K.unit === i ? "strong" : ""}" data-act="unit" data-i="${i}">${u[0]}</div>`).join("")}</div><div id="cres"></div>`;
+      <div class="row" style="margin:18px 0;flex-wrap:wrap"><input id="cv" style="width:190px" value="${esc(K.value)}">
+      ${units.map((u, i) => `<div class="btn glass ${K.unit === i ? "strong" : ""}" data-act="unit" data-i="${i}">${u[0]}</div>`).join("")}</div>
+      ${K.cat === 2 ? "" : `<div class="row" style="margin-bottom:18px;flex-wrap:wrap"><span class="sub" style="margin:0">Bruch:</span>
+      ${[["¼", "1/4"], ["⅓", "1/3"], ["½", "1/2"], ["⅔", "2/3"], ["¾", "3/4"]].map(f => `<div class="btn glass" style="font-size:24px" data-act="frac" data-f="${f[1]}">${f[0]}</div>`).join("")}
+      <div class="btn glass" data-act="fracclear">Löschen</div></div>`}<div id="cres"></div>`;
     renderConv();
   } else if (tab === 2) {
     const step = (k, l) => `<div class="row" style="margin-bottom:10px"><span style="width:150px;font-size:20px">${l}</span>
@@ -515,16 +527,20 @@ function renderTimerList() {
 function renderConv() {
   const el = $("#cres"); if (!el) return;
   const v = num(K.value);
-  if (v == null) { el.innerHTML = `<p class="sub">Bitte eine Zahl eingeben</p>`; return; }
+  if (v == null) { el.innerHTML = `<p class="sub">Bitte eine Zahl oder einen Bruch eingeben, zum Beispiel 250 oder 1 1/2</p>`; return; }
+  // Spell a fraction out as a plain number first, so it is clear what is being converted.
+  const plain = hasFraction(K.value) ? `<div class="res" style="color:var(--accent)">${esc(K.value.trim())} = ${fmt(v)}</div>` : "";
   if (K.cat === 2) { el.innerHTML = `<div class="res" style="font-size:40px;font-weight:600">= ${K.unit === 0 ? fmt(v * 9 / 5 + 32) + " °F" : fmt((v - 32) * 5 / 9) + " °C"}</div>`; return; }
   const units = K.cat === 0 ? WEIGHT : VOLUME, base = v * units[K.unit][1];
-  el.innerHTML = units.map((u, i) => i === K.unit ? "" : `<div class="res">= ${fmt(base / u[1])} ${u[0]}</div>`).join("");
+  el.innerHTML = plain + units.map((u, i) => i === K.unit ? "" : `<div class="res">= ${fmt(base / u[1])} ${u[0]}</div>`).join("");
 }
+/* A quantity inside a line of text: mixed fractions first, then fraction signs, then plain numbers. */
+const QTY = /(?:\d+\s+)?\d+\s*\/\s*\d+|\d+\s*[¼½¾⅓⅔⅛]|[¼½¾⅓⅔⅛]|\d+(?:[.,]\d+)?/g;
 function renderPortions() {
   const el = $("#pres"); if (!el) return;
   const f = K.to / K.from;
   el.innerHTML = `<p class="sub">Umgerechnet für ${K.to} Portionen</p>` + K.text.split("\n").filter(l => l.trim()).map(l =>
-    `<div class="res">${esc(l.replace(/\d+(?:[.,]\d+)?/g, m => fmt(parseFloat(m.replace(",", ".")) * f)))}</div>`).join("");
+    `<div class="res">${esc(l.replace(QTY, m => { const v = num(m); return v == null ? m : fmt(v * f); }))}</div>`).join("");
 }
 function renderShopping() {
   const el = $("#slist"); if (!el) return;
@@ -591,6 +607,13 @@ document.addEventListener("click", ev => {
     case "cust": K.custom = Math.min(600, Math.max(1, K.custom + +el.dataset.d)); renderKitchen(); break;
     case "cat": K.cat = i; K.unit = 0; K.value = $("#cv").value; renderKitchen(); break;
     case "unit": K.unit = i; K.value = $("#cv").value; renderKitchen(); break;
+    case "frac": {
+      // Keep a small whole number that is already typed (1 becomes 1 1/2); anything else is replaced by the fraction.
+      const whole = $("#cv").value.trim().match(/^(\d+)(?:\s+\d+\s*\/\s*\d+)?$/);
+      K.value = (whole && +whole[1] > 0 && +whole[1] <= 20 ? whole[1] + " " : "") + el.dataset.f;
+      renderKitchen(); break;
+    }
+    case "fracclear": K.value = ""; renderKitchen(); $("#cv").focus(); break;
     case "por": K[el.dataset.k] = Math.min(50, Math.max(1, K[el.dataset.k] + +el.dataset.d)); K.text = $("#pt").value; renderKitchen(); break;
     case "sadd": addShopping(); break;
     case "sclear": shopping = shopping.filter(s => !s.done); LS.set("shopping", shopping); renderShopping(); break;
