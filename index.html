@@ -137,7 +137,7 @@ svg.ic{fill:none;stroke:currentColor;stroke-width:1.25;stroke-linecap:round;stro
 <script>
 "use strict";
 /* Shown in the admin menu. Raise it with every upload so it is clear which version the iPad is running. */
-const VERSION = "12 · 14.11.2026";
+const VERSION = "13 · 15.11.2026";
 
 /* ---------- storage ---------- */
 const LS = {
@@ -225,9 +225,14 @@ const PICKABLE = ["app", "chat", "home", "pot", "book", "chef", "music", "play",
 const icon = n => `<svg class="ic" viewBox="0 0 24 24">${ICONS[n] || ICONS.app}</svg>`;
 
 /* ---------- theme, clock, tick ---------- */
+/* Sunrise and sunset at the weather place, as minutes since midnight. Kept across restarts, so the
+   theme still follows the sun when the weather service cannot be reached. Without a place: 7:00 to 19:00. */
+let sun = LS.get("sun", null);
+const dayWindow = () => sun && sun.set > sun.rise ? sun : { rise: 7 * 60, set: 19 * 60 };
+const hhmm = m => String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0");
 function applyTheme() {
-  const h = new Date().getHours();
-  const light = theme === "light" || (theme === "auto" && h >= 7 && h < 19);
+  const d = new Date(), m = d.getHours() * 60 + d.getMinutes(), w = dayWindow();
+  const light = theme === "light" || (theme === "auto" && m >= w.rise && m < w.set);
   document.documentElement.classList.toggle("light", light);
 }
 function tick() {
@@ -363,9 +368,13 @@ function show(name) {
 async function loadWeather() {
   if (!place) { wx = null; return renderHome(); }
   try {
-    const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${place.lat}&longitude=${place.lon}&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=1`);
+    const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${place.lat}&longitude=${place.lon}&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min,sunrise,sunset&timezone=auto&forecast_days=1`);
     const o = await r.json();
     wx = { temp: o.current.temperature_2m, code: o.current.weather_code, hi: o.daily.temperature_2m_max[0], lo: o.daily.temperature_2m_min[0] };
+    // Times arrive as local time at the place, e.g. "2026-11-15T07:31".
+    const mins = t => { const x = /T(\d\d):(\d\d)/.exec(t || ""); return x ? +x[1] * 60 + +x[2] : null; };
+    const rise = mins(o.daily.sunrise && o.daily.sunrise[0]), set = mins(o.daily.sunset && o.daily.sunset[0]);
+    if (rise != null && set != null) { sun = { rise, set }; LS.set("sun", sun); applyTheme(); }
   } catch (e) {}
   if (!$("#home").classList.contains("hidden")) renderHome();
 }
@@ -451,7 +460,7 @@ function menu() {
   const names = { auto: "Automatisch", light: "Hell", dark: "Dunkel" };
   dialog(`<h2>Verwaltung</h2><div class="stack">
     <div class="btn glass" data-act="editon">Kacheln bearbeiten</div>
-    <div class="btn glass" data-act="theme">Design: ${names[theme]}</div>
+    <div class="btn glass" data-act="theme">Design: ${names[theme]}${theme === "auto" ? ` (hell ${hhmm(dayWindow().rise)}–${hhmm(dayWindow().set)})` : ""}</div>
     <div class="btn glass" data-act="agendaset">Kalender-Adresse ändern</div>
     <div class="btn glass" data-act="newpin">PIN ändern</div>
     <div class="btn glass" data-act="reload">Website aktualisieren</div>
